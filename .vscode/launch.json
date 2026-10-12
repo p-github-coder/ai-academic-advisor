@@ -1,0 +1,21 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Flask: Academic Advisor",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "flask",
+      "args": ["--app", "app", "run", "--debug"],
+      "jinja": true,
+      "justMyCode": true
+    },
+    {
+      "name": "Train model (train.py)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/train.py",
+      "console": "integratedTerminal"
+    }
+  ]
+}

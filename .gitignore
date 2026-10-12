@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+*.egg-info/
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.idea/
+
+# Secrets
+.env
+
+# NOTE: models/advisor_model.pkl and data/students.csv are tracked on purpose
+# (the assignment is graded on the deployed .pkl); both are small.
