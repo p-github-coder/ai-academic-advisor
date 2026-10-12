@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Academic Advisor</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header class="top">
+    <div class="wrap">
+      <h1>Academic Advisor</h1>
+      <p>A hybrid expert system and machine-learning model for semester planning.</p>
+    </div>
+  </header>
+
+  <main class="wrap grid">
+    <section class="card" aria-labelledby="form-title">
+      <h2 id="form-title">Your semester</h2>
+
+      {% if load_error %}
+        <p class="banner error" role="alert">{{ load_error }}</p>
+      {% endif %}
+
+      <form method="post" action="{{ url_for('index_post') }}" novalidate>
+        <div class="fields">
+          {% for name, f in fields.items() %}
+            <label class="field {% if errors.get(name) %}has-error{% endif %}">
+              <span class="label">{{ f.label }}</span>
+              <input
+                type="number" name="{{ name }}" id="{{ name }}"
+                min="{{ f.minimum }}" max="{{ f.maximum }}" step="{{ f.step }}"
+                value="{{ values.get(name, f.default) }}" required>
+              <span class="hint">{{ errors.get(name) or f.help }}</span>
+            </label>
+          {% endfor %}
+        </div>
+        <button type="submit" {% if load_error %}disabled{% endif %}>Get advice</button>
+      </form>
+    </section>
+
+    <section class="card" aria-live="polite" aria-labelledby="result-title">
+      <h2 id="result-title">Your advice</h2>
+
+      {% if result %}
+        <div class="standing standing-{{ result.predicted_standing|lower|replace(' ', '-') }}">
+          <span class="small">Predicted next-semester standing</span>
+          <strong>{{ result.predicted_standing }}</strong>
+          <span class="small">{{ result.standing_note }}</span>
+        </div>
+        <p class="meta">Current class on the 5.0 scale: <strong>{{ result.current_class }}</strong></p>
+
+        <h3>Model confidence</h3>
+        <ul class="bars">
+          {% for label, p in result.probabilities.items() %}
+            <li>
+              <span>{{ label }}</span>
+              <span class="bar"><i style="width: {{ (p * 100)|round(0) }}%"></i></span>
+              <span class="pct">{{ (p * 100)|round(0)|int }}%</span>
+            </li>
+          {% endfor %}
+        </ul>
+
+        <h3>Recommendations</h3>
+        <ul class="advice">
+          {% for a in result.advice %}
+            <li class="p-{{ a.priority }}">
+              <span class="tag">{{ a.priority }}</span>
+              <div><strong>{{ a.category }}</strong><br>{{ a.message }}</div>
+            </li>
+          {% endfor %}
+        </ul>
+
+        <p class="meta">
+          The model weighs these inputs most overall:
+          {% for f in result.model_focus %}{{ f.feature|replace('_', ' ') }}{% if not loop.last %}, {% endif %}{% endfor %}.
+        </p>
+      {% else %}
+        <p class="empty">Fill in the form and press <em>Get advice</em>.</p>
+      {% endif %}
+    </section>
+  </main>
+
+  <footer class="wrap foot">
+    Trained on synthetic data for a CSC 303 project. Advice is guidance, not an official academic ruling.
+  </footer>
+</body>
+</html>
