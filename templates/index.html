@@ -4,85 +4,227 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Academic Advisor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-  <header class="top">
-    <div class="wrap">
-      <h1>Academic Advisor</h1>
-      <p>A hybrid expert system and machine-learning model for semester planning.</p>
-    </div>
-  </header>
+<div class="shell">
 
-  <main class="wrap grid">
-    <section class="card" aria-labelledby="form-title">
-      <h2 id="form-title">Your semester</h2>
+  <nav class="rail" aria-label="Sections">
+    <a class="logo" href="#top" aria-label="Academic Advisor home">AA</a>
+    <a href="#profile" title="About you" aria-label="About you">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>
+    </a>
+    <a href="#courses" title="Courses" aria-label="Courses">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h13a1 1 0 0 1 1 1v14H6a2 2 0 0 1-2-2V5a1 1 0 0 1 1-1z"/><path d="M8 8h7M8 12h7"/></svg>
+    </a>
+    <a href="#study" title="Study habits" aria-label="Study habits">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+    </a>
+    <a href="#goals" title="Goals" aria-label="Goals">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5"/><path d="M12 12l6-6"/></svg>
+    </a>
+    <a href="#results" title="Your plan" aria-label="Your plan">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V11M12 20V4M19 20v-6"/></svg>
+    </a>
+  </nav>
 
-      {% if load_error %}
-        <p class="banner error" role="alert">{{ load_error }}</p>
-      {% endif %}
+  <main id="top">
+    <header class="page-head">
+      <div>
+        <h1>Academic Advisor</h1>
+        <p class="muted">Enter your results, courses and study habits to get a predicted standing, course priorities, a weekly study plan and a path to your target CGPA.</p>
+      </div>
+      <div class="head-actions">
+        <button type="button" class="btn ghost" id="load-example">Fill with example</button>
+        <button type="button" class="btn ghost" id="reset-form">Clear form</button>
+      </div>
+    </header>
 
-      <form method="post" action="{{ url_for('index_post') }}" novalidate>
-        <div class="fields">
-          {% for name, f in fields.items() %}
-            <label class="field {% if errors.get(name) %}has-error{% endif %}">
-              <span class="label">{{ f.label }}</span>
-              <input
-                type="number" name="{{ name }}" id="{{ name }}"
-                min="{{ f.minimum }}" max="{{ f.maximum }}" step="{{ f.step }}"
-                value="{{ values.get(name, f.default) }}" required>
-              <span class="hint">{{ errors.get(name) or f.help }}</span>
-            </label>
-          {% endfor %}
+    {% if load_error %}
+      <p class="banner error" role="alert">{{ load_error }}</p>
+    {% endif %}
+    <p class="banner error" id="net-error" role="alert" hidden></p>
+
+    <form id="form" novalidate autocomplete="off">
+
+      <section class="card" id="profile">
+        <h2>About you</h2>
+        <div class="grid g4">
+          <label class="field">
+            <span class="lab">Academic level</span>
+            <select name="level" required>
+              <option value="">Select</option>
+              {% for lv in options.levels %}<option value="{{ lv }}">{{ lv }} level</option>{% endfor %}
+            </select>
+            <small class="err"></small>
+          </label>
+          <label class="field span2">
+            <span class="lab">Department or course of study</span>
+            <input name="department" list="departments" maxlength="80" placeholder="Computer Science" required>
+            <datalist id="departments">
+              <option value="Computer Science"><option value="Software Engineering">
+              <option value="Cyber Security"><option value="Information Technology">
+              <option value="Data Science"><option value="Information Systems">
+            </datalist>
+            <small class="err"></small>
+          </label>
+          <label class="field">
+            <span class="lab">Current semester</span>
+            <select name="semester">
+              {% for s in options.semesters %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
+            </select>
+            <small class="err"></small>
+          </label>
+          <label class="field">
+            <span class="lab">Current CGPA</span>
+            <input name="cgpa" type="number" inputmode="decimal" min="0" max="5" step="0.01" placeholder="3.60" required>
+            <small class="hint">On the 5.0 scale</small>
+            <small class="err"></small>
+          </label>
+          <label class="field">
+            <span class="lab">Previous semester GPA</span>
+            <input name="last_gpa" type="number" inputmode="decimal" min="0" max="5" step="0.01" placeholder="3.40" required>
+            <small class="err"></small>
+          </label>
+          <label class="field">
+            <span class="lab">GPA so far this semester</span>
+            <input name="current_gpa" type="number" inputmode="decimal" min="0" max="5" step="0.01" placeholder="Optional">
+            <small class="hint">Leave blank if unknown</small>
+            <small class="err"></small>
+          </label>
+          <label class="field">
+            <span class="lab">Credit units completed</span>
+            <input name="credits_earned" type="number" inputmode="numeric" min="0" max="240" step="1" placeholder="72">
+            <small class="err"></small>
+          </label>
+          <label class="field">
+            <span class="lab">Units needed to graduate</span>
+            <input name="credits_required" type="number" inputmode="numeric" min="30" max="240" step="1" value="120">
+            <small class="err"></small>
+          </label>
         </div>
-        <button type="submit" {% if load_error %}disabled{% endif %}>Get advice</button>
-      </form>
-    </section>
+      </section>
 
-    <section class="card" aria-live="polite" aria-labelledby="result-title">
-      <h2 id="result-title">Your advice</h2>
-
-      {% if result %}
-        <div class="standing standing-{{ result.predicted_standing|lower|replace(' ', '-') }}">
-          <span class="small">Predicted next-semester standing</span>
-          <strong>{{ result.predicted_standing }}</strong>
-          <span class="small">{{ result.standing_note }}</span>
+      <section class="card" id="courses">
+        <div class="card-head">
+          <div>
+            <h2>This semester's courses</h2>
+            <p class="muted">Add every course you are registered for. Scores are optional; difficulty and confidence still shape the advice.</p>
+          </div>
+          <button type="button" class="btn ghost" id="add-course">Add course</button>
         </div>
-        <p class="meta">Current class on the 5.0 scale: <strong>{{ result.current_class }}</strong></p>
+        <small class="err block" id="courses-err"></small>
+        <div id="course-list" class="course-list"></div>
+      </section>
 
-        <h3>Model confidence</h3>
-        <ul class="bars">
-          {% for label, p in result.probabilities.items() %}
-            <li>
-              <span>{{ label }}</span>
-              <span class="bar"><i style="width: {{ (p * 100)|round(0) }}%"></i></span>
-              <span class="pct">{{ (p * 100)|round(0)|int }}%</span>
-            </li>
-          {% endfor %}
-        </ul>
+      <section class="card" id="study">
+        <h2>Study habits</h2>
+        <div class="grid g4">
+          <label class="field">
+            <span class="lab">Study hours per day</span>
+            <input name="hours_per_day" type="number" inputmode="decimal" min="0" max="16" step="0.5" placeholder="3" required>
+            <small class="err"></small>
+          </label>
+          <label class="field">
+            <span class="lab">Days studied per week</span>
+            <select name="days_per_week">
+              {% for d in range(1, 8) %}<option value="{{ d }}" {% if d == 5 %}selected{% endif %}>{{ d }} day{{ 's' if d > 1 }}</option>{% endfor %}
+            </select>
+            <small class="err"></small>
+          </label>
+          <label class="field">
+            <span class="lab">Preferred study period</span>
+            <select name="preferred_period">
+              {% for p in options.periods %}<option value="{{ p }}" {% if p == 'Evening' %}selected{% endif %}>{{ p }}</option>{% endfor %}
+            </select>
+            <small class="err"></small>
+          </label>
+          <label class="field">
+            <span class="lab">Class attendance (%)</span>
+            <input name="attendance_pct" type="number" inputmode="numeric" min="0" max="100" step="1" value="80">
+            <small class="err"></small>
+          </label>
+          <label class="field">
+            <span class="lab">Assignment completion</span>
+            <select name="assignment">
+              {% for k, label in options.assignment.items() %}<option value="{{ k }}">{{ label }}</option>{% endfor %}
+            </select>
+            <small class="err"></small>
+          </label>
+          <label class="field">
+            <span class="lab">Upcoming exam date</span>
+            <input name="exam_date" type="date">
+            <small class="hint">If you know it</small>
+            <small class="err"></small>
+          </label>
+          <fieldset class="field span2">
+            <legend class="lab">How do you study?</legend>
+            <div class="checks">
+              {% for k, label in options.methods.items() %}
+                <label class="check"><input type="checkbox" name="methods" value="{{ k }}"> {{ label }}</label>
+              {% endfor %}
+            </div>
+          </fieldset>
+        </div>
+      </section>
 
-        <h3>Recommendations</h3>
-        <ul class="advice">
-          {% for a in result.advice %}
-            <li class="p-{{ a.priority }}">
-              <span class="tag">{{ a.priority }}</span>
-              <div><strong>{{ a.category }}</strong><br>{{ a.message }}</div>
-            </li>
-          {% endfor %}
-        </ul>
+      <section class="card" id="goals">
+        <h2>Challenges and goals</h2>
+        <div class="grid g4">
+          <label class="field">
+            <span class="lab">Target CGPA</span>
+            <input name="target_cgpa" type="number" inputmode="decimal" min="0" max="5" step="0.01" placeholder="3.80" required>
+            <small class="err"></small>
+          </label>
+          <label class="field span2">
+            <span class="lab">What do you want to do?</span>
+            <select name="goal_type">
+              {% for k, label in options.goal_types.items() %}<option value="{{ k }}">{{ label }}</option>{% endfor %}
+            </select>
+            <small class="err"></small>
+          </label>
+          <label class="field">
+            <span class="lab">Highest-priority course</span>
+            <select name="priority_course" id="priority-course"><option value="">None</option></select>
+            <small class="err"></small>
+          </label>
+          <label class="field span2">
+            <span class="lab">Biggest academic challenge</span>
+            <select name="challenge">
+              {% for k, label in options.challenges.items() %}<option value="{{ k }}">{{ label }}</option>{% endfor %}
+            </select>
+            <small class="err"></small>
+          </label>
+          <fieldset class="field span2">
+            <legend class="lab">What do you have access to?</legend>
+            <div class="checks">
+              {% for k, label in options.materials.items() %}
+                <label class="check"><input type="checkbox" name="materials" value="{{ k }}"> {{ label }}</label>
+              {% endfor %}
+            </div>
+          </fieldset>
+          <label class="check span4"><input type="checkbox" name="misses_deadlines"> I often miss classes or deadlines</label>
+        </div>
+      </section>
 
-        <p class="meta">
-          The model weighs these inputs most overall:
-          {% for f in result.model_focus %}{{ f.feature|replace('_', ' ') }}{% if not loop.last %}, {% endif %}{% endfor %}.
-        </p>
-      {% else %}
-        <p class="empty">Fill in the form and press <em>Get advice</em>.</p>
-      {% endif %}
-    </section>
+      <div class="submit-bar">
+        <button type="submit" class="btn primary" id="submit" {% if load_error %}disabled{% endif %}>Build my plan</button>
+        <span class="muted" id="status" role="status"></span>
+      </div>
+    </form>
+
+    <section id="results" aria-live="polite" hidden></section>
+
+    <footer class="foot">
+      Trained on synthetic data for a CSC 303 project. The advice is guidance, not an official academic ruling.
+    </footer>
   </main>
+</div>
 
-  <footer class="wrap foot">
-    Trained on synthetic data for a CSC 303 project. Advice is guidance, not an official academic ruling.
-  </footer>
+<script>window.ADVISOR_OPTIONS = {{ options|tojson }};</script>
+<script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
 </html>
