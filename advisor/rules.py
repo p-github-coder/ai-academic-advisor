@@ -1,73 +1,14 @@
-"""Rule-based (expert-system) half of the advisor, plus input validation.
+"""Rule-based (expert-system) recommendations.
 
-Rules are explicit and explainable: each one fires on a clear condition and returns
-advice a student can act on. Thresholds are common conventions on a 5-point scale and
-should be adjusted to your institution's handbook.
+Each rule fires on a clear condition and returns advice a student can act on. Thresholds are
+common conventions on a 5-point scale; adjust them to your institution's handbook.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from advisor.data import DEGREE_CLASSES, FEATURES, degree_class
-
 PRIORITY_ORDER = {"high": 0, "medium": 1, "low": 2}
-
-
-@dataclass(frozen=True)
-class Field:
-    label: str
-    minimum: float
-    maximum: float
-    default: float
-    step: float
-    help: str
-    integer: bool = False
-
-
-# Order here is the order shown in the web form. `credits_earned` is used by the
-# rules only (the CGPA planner); the ML model uses the FEATURES list.
-FIELDS: dict[str, Field] = {
-    "cgpa": Field("Current CGPA", 0, 5, 3.5, 0.01, "Cumulative GPA on the 5.0 scale"),
-    "last_gpa": Field("Last semester GPA", 0, 5, 3.5, 0.01, "GPA from your most recent semester"),
-    "credits_earned": Field(
-        "Credit units completed", 0, 200, 60, 1, "Total units passed so far", integer=True
-    ),
-    "credit_load": Field(
-        "Credit units this semester", 12, 30, 21, 1, "Units you are registered for", integer=True
-    ),
-    "attendance_pct": Field("Class attendance (%)", 0, 100, 80, 1, "Average across your courses"),
-    "study_hours_week": Field("Study hours per week", 0, 60, 14, 0.5, "Outside lectures"),
-    "assignment_pct": Field("Assignments submitted (%)", 0, 100, 85, 1, "On time and complete"),
-    "carryovers": Field("Carry-over courses", 0, 10, 0, 1, "Courses you must resit", integer=True),
-    "sleep_hours": Field("Sleep per night (hours)", 0, 14, 7, 0.5, "Typical weeknight"),
-    "extracurricular_hours": Field(
-        "Extracurricular hours per week", 0, 60, 5, 0.5, "Clubs, jobs, NACOS duties, etc."
-    ),
-}
-
-
-def validate_profile(raw: dict) -> tuple[dict, dict]:
-    """Coerce `raw` into numbers and range-check it. Returns (clean, errors)."""
-    clean: dict[str, float] = {}
-    errors: dict[str, str] = {}
-    for name, spec in FIELDS.items():
-        value = raw.get(name)
-        if value is None or str(value).strip() == "":
-            errors[name] = "This field is required."
-            continue
-        try:
-            number = float(value)
-        except (TypeError, ValueError):
-            errors[name] = "Enter a number."
-            continue
-        if number != number or number in (float("inf"), float("-inf")):
-            errors[name] = "Enter a finite number."
-        elif not spec.minimum <= number <= spec.maximum:
-            errors[name] = f"Must be between {spec.minimum:g} and {spec.maximum:g}."
-        else:
-            clean[name] = int(round(number)) if spec.integer else number
-    return clean, errors
 
 
 @dataclass(frozen=True)
@@ -86,166 +27,248 @@ class Advice:
         }
 
 
-def required_semester_gpa(cgpa: float, credits_earned: float, credit_load: float, target: float):
-    """Semester GPA needed this term to lift the CGPA to `target`.
-
-    Solves (cgpa*E + g*L) / (E + L) = target for g. Returns None if there is no history.
-    """
-    if credits_earned <= 0 or credit_load <= 0:
-        return None
-    return (target * (credits_earned + credit_load) - cgpa * credits_earned) / credit_load
-
-
-def target_planner(p: dict) -> Advice | None:
-    """Tell the student what it takes to reach the next degree class."""
-    cgpa = p["cgpa"]
-    higher = [(low, name) for low, name in DEGREE_CLASSES if low > cgpa]
-    if not higher:
-        return Advice(
-            "low", "Goal", "You are in the First Class range. Protect it by staying consistent."
-        )
-    low, name = higher[-1]  # the nearest class above the current one
-    needed = required_semester_gpa(cgpa, p["credits_earned"], p["credit_load"], low)
-    if needed is None:
-        return None
-    if needed > 5.0:
-        return Advice(
-            "medium",
-            "Goal",
-            f"Reaching {name} ({low:.2f}+) cannot be done in a single semester "
-            f"(you would need a GPA of {needed:.2f}). Aim for steady gains over several terms.",
-        )
-    return Advice(
-        "medium" if needed <= 4.5 else "high",
-        "Goal",
-        f"To lift your CGPA to {low:.2f} ({name}) after this semester you need a "
-        f"semester GPA of about {max(needed, 0):.2f}.",
-    )
-
-
-def apply_rules(p: dict) -> list[Advice]:
+def apply_rules(p: dict, ranked: list[dict], plan: dict, goal: dict) -> list[Advice]:
     """Run every rule against a validated profile and return advice sorted by priority."""
     out: list[Advice] = []
+    add = out.append
+    credit_load = sum(c["credits"] for c in p["courses"])
+    repeats = [c["code"] for c in p["courses"] if c["repeat"]]
 
+    # Attendance
     if p["attendance_pct"] < 75:
-        out.append(
+        add(
             Advice(
                 "high",
                 "Attendance",
-                f"Attendance of {p['attendance_pct']:g}% is under 75%, a common threshold for "
-                "exam eligibility. Prioritise getting to class and confirm your department's rule.",
+                f"Attendance of {p['attendance_pct']:g}% is under 75%, a common threshold for exam "
+                "eligibility. Prioritise getting to class and confirm your department's rule.",
             )
         )
     elif p["attendance_pct"] < 85:
-        out.append(
-            Advice("low", "Attendance", "Attendance is fine; pushing past 85% helps retention.")
-        )
+        add(Advice("low", "Attendance", "Attendance is fine; pushing past 85% helps retention."))
 
-    if p["carryovers"] > 0:
-        out.append(
+    # Repeat courses
+    if repeats:
+        add(
             Advice(
                 "high",
-                "Carry-overs",
-                f"You have {p['carryovers']} carry-over course(s). Register them first, "
-                "attend their lectures and book time with the course lecturer.",
+                "Repeat courses",
+                f"You are repeating {', '.join(repeats)}. Register them first, attend every "
+                "lecture and book time with the course lecturer early.",
             )
         )
 
-    if p["credit_load"] > 24:
-        out.append(
+    # Workload and study time
+    if credit_load > 24:
+        add(
             Advice(
                 "high",
                 "Workload",
-                f"{p['credit_load']} units is above the usual 24-unit ceiling. Confirm approval "
-                "and consider dropping optional courses.",
+                f"{credit_load} units is above the usual 24-unit ceiling. Confirm approval and "
+                "consider dropping optional courses.",
             )
         )
-    elif p["credit_load"] >= 22 and p["study_hours_week"] < p["credit_load"]:
-        out.append(
-            Advice(
-                "medium",
-                "Workload",
-                "A heavy load with limited study time is risky. Plan for about one study hour "
-                "per credit unit each week.",
-            )
-        )
-
-    if p["study_hours_week"] < p["credit_load"] * 0.5:
-        out.append(
+    weekly, recommended = plan["weekly_hours"], plan["recommended_hours"]
+    if weekly < recommended * 0.5:
+        add(
             Advice(
                 "high",
                 "Study time",
-                f"{p['study_hours_week']:g} study hours a week is low for "
-                f"{p['credit_load']} units. "
-                "Block out fixed daily study slots.",
+                f"{weekly:g} study hours a week is low for {credit_load} units. Aim for about "
+                f"{recommended:g} (one hour per credit unit) and block fixed daily slots.",
             )
         )
-    elif p["study_hours_week"] < p["credit_load"]:
-        out.append(
+    elif weekly < recommended:
+        add(
             Advice(
                 "medium",
                 "Study time",
-                "Raise study time toward roughly one hour per registered credit unit.",
+                f"You plan {weekly:g} hours a week; about {recommended:g} (one per credit unit) is "
+                "a safer target.",
+            )
+        )
+    if p["hours_per_day"] > 6:
+        add(
+            Advice(
+                "medium",
+                "Study time",
+                "Study blocks over 6 hours a day are hard to sustain. Use 50-minute sessions with "
+                "10-minute breaks.",
             )
         )
 
-    if p["assignment_pct"] < 70:
-        out.append(
+    # Coursework habits
+    if p["assignment"] == "rarely":
+        add(
             Advice(
                 "high",
                 "Coursework",
-                f"Only {p['assignment_pct']:g}% of assignments are submitted. Continuous "
-                "assessment marks are the easiest to recover.",
+                "You rarely complete assignments. Continuous assessment marks are the easiest to "
+                "recover, so submit every one from now on.",
             )
         )
-
-    if p["sleep_hours"] < 6:
-        out.append(
+    elif p["assignment"] == "sometimes":
+        add(
             Advice(
                 "medium",
-                "Wellbeing",
-                f"{p['sleep_hours']:g} hours of sleep is short; memory and focus suffer. "
-                "Aim for 7 to 8 hours, especially in exam weeks.",
+                "Coursework",
+                "Make completing every assignment a rule; they add marks before exams begin.",
             )
         )
-
-    if p["extracurricular_hours"] > 15:
-        out.append(
+    if p["misses_deadlines"]:
+        add(
             Advice(
                 "medium",
-                "Balance",
-                f"{p['extracurricular_hours']:g} extracurricular hours a week is a lot. "
-                "Delegate or schedule around lectures and tests.",
+                "Deadlines",
+                "Put every deadline in a phone calendar with a reminder two days before.",
             )
         )
 
+    # Study methods and materials
+    if p["methods"] and set(p["methods"]) <= {"reading", "videos"}:
+        add(
+            Advice(
+                "medium",
+                "Study method",
+                "Reading and videos alone give a false sense of progress. Add practice questions "
+                "and test yourself without notes.",
+            )
+        )
+    if "past_questions" not in p["materials"]:
+        add(
+            Advice(
+                "medium",
+                "Materials",
+                "Get past questions for each course from your class representative or department; "
+                "they show how lecturers set exams.",
+            )
+        )
+    if "notes" not in p["materials"]:
+        add(
+            Advice(
+                "medium",
+                "Materials",
+                "Collect complete lecture notes from classmates or lecturers before revising.",
+            )
+        )
+
+    # Biggest challenge
+    challenge_tips = {
+        "understanding": (
+            "Understanding concepts",
+            "Explain each topic aloud in your own words. Where you get stuck, ask the lecturer or "
+            "a coursemate and attend tutorials.",
+        ),
+        "remembering": (
+            "Remembering information",
+            "Use active recall and spaced repetition: quiz yourself after 1 day, 3 days and 1 week "
+            "instead of rereading.",
+        ),
+        "exam_questions": (
+            "Answering exam questions",
+            "Do timed past questions twice a week, then compare your answers with the marking "
+            "scheme or notes.",
+        ),
+        "time": (
+            "Time management",
+            "Plan the week on Sunday using the timetable below and review it each night.",
+        ),
+    }
+    if p["challenge"] in challenge_tips:
+        category, message = challenge_tips[p["challenge"]]
+        add(Advice("medium", category, message))
+
+    # Exam countdown
+    exam = plan["exam"]
+    if exam and not exam["passed"]:
+        d = exam["days_left"]
+        if d <= 14:
+            add(
+                Advice(
+                    "high",
+                    "Exams",
+                    f"Exams start in {d} day{'s' if d != 1 else ''}. Switch to past questions and "
+                    "revise your highest-priority courses first.",
+                )
+            )
+        elif d <= 42:
+            add(
+                Advice(
+                    "medium",
+                    "Exams",
+                    f"{d} days to exams. Finish covering the syllabus within the next "
+                    f"{max(d - 14, 7)} days, then spend the last two weeks on practice.",
+                )
+            )
+
+    # Focus course
+    top = [r for r in ranked if r["label"] == "Urgent"][:2]
+    if top:
+        names = " and ".join(r["code"] for r in top)
+        add(Advice("high", "Course focus", f"Start with {names}; they need the most attention."))
+
+    # Trend
     if p["last_gpa"] < p["cgpa"] - 0.5:
-        out.append(
+        add(
             Advice(
                 "high",
                 "Trend",
-                "Your last semester fell well below your CGPA. Find out what changed and "
-                "speak to your course adviser early.",
+                "Your last semester fell well below your CGPA. Find out what changed and speak to "
+                "your course adviser early.",
             )
         )
     elif p["last_gpa"] > p["cgpa"] + 0.3:
-        out.append(Advice("low", "Trend", "Your results are trending up. Keep the same routine."))
+        add(Advice("low", "Trend", "Your results are trending up. Keep the same routine."))
 
-    planner = target_planner(p)
-    if planner:
-        out.append(planner)
+    # Goal tracking
+    needed = goal["needed_gpa"]
+    if goal["status"] == "out_of_reach" and needed is not None:
+        add(
+            Advice(
+                "medium",
+                "Goal",
+                f"Reaching a CGPA of {goal['target']:g} in one semester would need a GPA of "
+                f"{needed:.2f}, above the 5.00 maximum. Spread the climb over several semesters.",
+            )
+        )
+    elif goal["status"] == "stretch" and needed is not None:
+        add(
+            Advice(
+                "medium",
+                "Goal",
+                f"To reach a CGPA of {goal['target']:g} you need about {needed:.2f} this "
+                f"semester; the model projects {goal['projected_cgpa']:.2f}. Close the gap "
+                "with the urgent courses.",
+            )
+        )
+    elif goal["status"] == "on_track":
+        add(
+            Advice(
+                "low",
+                "Goal",
+                f"At your current pace the model projects a CGPA of {goal['projected_cgpa']:.2f}, "
+                "which meets your target. Stay consistent.",
+            )
+        )
+    elif goal["status"] == "at_risk":
+        add(
+            Advice(
+                "high",
+                "Goal",
+                f"The model projects your CGPA dropping to {goal['projected_cgpa']:.2f}, below "
+                f"your target of {goal['target']:g}. Fix the urgent courses to protect it.",
+            )
+        )
+
+    if p["goal_type"] == "recover":
+        add(
+            Advice(
+                "medium",
+                "Recovery",
+                "Recovering is realistic when you target your weakest courses first. Fix repeat "
+                "courses and low-scoring high-credit courses before anything else.",
+            )
+        )
 
     out.sort(key=lambda a: PRIORITY_ORDER[a.priority])
     return out
-
-
-__all__ = [
-    "Advice",
-    "FEATURES",
-    "FIELDS",
-    "apply_rules",
-    "degree_class",
-    "required_semester_gpa",
-    "target_planner",
-    "validate_profile",
-]
